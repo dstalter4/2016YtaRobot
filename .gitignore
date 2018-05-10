@@ -1,8 +1,8 @@
 .metadata
 RemoteSystemsTempFiles
-YtaRobot/.settings
-YtaRobot/Debug
-YtaRobot/Release
+CmsdRobot/.settings
+CmsdRobot/Debug
+CmsdRobot/Release
 
 # Prerequisites
 *.d
