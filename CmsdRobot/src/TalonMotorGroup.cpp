@@ -1,15 +1,21 @@
 ////////////////////////////////////////////////////////////////////////////////
-/// @file TalonMotorGroup.cpp
+/// @file   TalonMotorGroup.cpp
+/// @author David Stalter
 ///
-/// A class designed to create a group of CAN Talons working in tandem.
+/// @details
+/// A class designed to work with a group of CAN Talon speed controllers working
+/// in tandem.
 ///
-/// CMSD FRC 2016
-/// Author: David Stalter
-/// @Edit History
+/// @if INCLUDE_EDIT_HISTORY
 /// - dts   03-JAN-2015 Created from 2014.
 /// - dts   17-JAN-2015 Ported to CAN Talons.
 /// - dts   06-FEB-2015 Support for follow and inverse control.
+/// - dts   08-JAN-2017 Ported to use TalonSRX class.
+/// - dts   06-JAN-2018 Adopted to CTRE Phoenix.
+/// - dts   05-FEB-2018 Convert float -> double.
+/// @endif
 ///
+/// Copyright (c) 2018 Youth Technology Academy
 ////////////////////////////////////////////////////////////////////////////////
 
 // SYSTEM INCLUDES
@@ -21,238 +27,162 @@
 // C++ INCLUDES
 #include "TalonMotorGroup.hpp"      // For class declaration
 
+// STATIC MEMBER DATA
+// (none)
+
 
 
 ////////////////////////////////////////////////////////////////
-// @method TalonMotorGroup::TalonMotorGroup
+/// @method TalonMotorGroup::TalonMotorGroup
 ///
 /// Constructor.  Creates the number of motors specified on the
 /// port numbers passed in.
 ///
 ////////////////////////////////////////////////////////////////
-TalonMotorGroup::TalonMotorGroup( int numInstances, int firstCANId, NeutralMode neutralMode, ControlMode controlMode )
-: m_pMotors()
+TalonMotorGroup::TalonMotorGroup( int numMotors, int firstCANId, MotorGroupControlMode controlMode, FeedbackDevice sensor )
+: m_NumMotors(numMotors)
+, m_pMotors()
 , m_ControlMode(controlMode)
-, m_pFeedbackDev(NULL)
-, m_NumMotors(numInstances)
-, m_EncoderCreationValues()
-, m_EncoderTargetValue()
-, m_EncoderDirection(FORWARD)
-, m_bActionInProgress(false)
+, m_Sensor(sensor)
 {
     // Allocate the necessary storage for all of the objects by invoking operator new[]
     // Assign the returned memory block to the first pointer in the array
-    //m_pMotors[0] =  reinterpret_cast<CANTalon *>( operator new[] (numInstances * sizeof(CANTalon)) );
+    //m_pMotors[0] =  reinterpret_cast<TalonSRX *>( operator new[] (numMotors * sizeof(TalonSRX)) );
 
     // CAN Talons can be set to follow, which the motor groups
-    // will do, so save off the first id as the master
+    // may do, so save off the first id as the master
     int masterId = firstCANId;
 
     // Loop for each motor to create
-    for ( int i = 0; i < numInstances; i++ )
+    for ( int i = 0; i < numMotors; i++ )
     {
         // Create it
-        m_pMotors[i] = new CANTalon(firstCANId++);
+        m_pMotors[i] = new TalonSRX(firstCANId++);
+        
+        // Override to always coast
+        m_pMotors[i]->SetNeutralMode(NeutralMode::Coast);
 
         // Only set follow for Talon groups that will be configured
-        // as such.  Otherwise just set everything to kPercentVbus.
-        // Master is the first object for following, set its mode to
-        // percent voltage bus.
-        if ((i == 0) || (controlMode != FOLLOW))
+        // as such.  Otherwise just use the defaults (percent voltage based).
+        // The CTRE Phoenix library now passes the control mode in the
+        // Set() method, so we only need to set the followers here.
+        if ((i != 0) && (controlMode == FOLLOW))
         {
-            m_pMotors[i]->SetControlMode(CANSpeedController::kPercentVbus);
+            m_pMotors[i]->Set(ControlMode::Follower, masterId);
         }
-        // Otherwise set to follow
+        else if (i == 0)
+        {
+            // This assumes only the first controller in a group has a sensor.
+            
+            // Sensor initialization (feedbackDevice, pidIdx, timeoutMs)
+            m_pMotors[i]->ConfigSelectedFeedbackSensor(sensor, 0, 0);
+        }
         else
         {
-            m_pMotors[i]->SetControlMode(CANSpeedController::kFollower);
-            m_pMotors[i]->Set(masterId);
         }
-
-        m_pMotors[i]->ConfigNeutralMode(neutralMode);
     }
 }
-
-
-
-void TalonMotorGroup::CreateEncoderFeedbackDevice(FeedbackDevice feedbackDev)
-{    
-    FeedbackDeviceStatus status = FeedbackDeviceStatus::FeedbackStatusUnknown;
-    
-    for ( int i = 0; i < m_NumMotors; i++ )
-    {
-        // Make sure the sensor is present
-        status = m_pMotors[i]->IsSensorPresent(feedbackDev);
-        
-        if (status != FeedbackDeviceStatus::FeedbackStatusPresent)
-        {
-            break;
-        }
-        
-        // Save off its original position
-        m_EncoderCreationValues[i] = m_pMotors[i]->GetPulseWidthPosition();
-        
-        // Set the sensor type and start it at zero
-        m_pMotors[i]->SetFeedbackDevice(feedbackDev);
-        m_pMotors[i]->SetPulseWidthPosition(0);
-    }
-    
-    // Only create the pointer if all the expected sensors are present.
-    // The loop will exit early if one fails.
-    if (status == FeedbackDeviceStatus::FeedbackStatusPresent)
-    {
-        m_pFeedbackDev = new FeedbackDevice(feedbackDev);
-    }
-}
-
-void TalonMotorGroup::TareEncoder()
-{
-    if (m_pFeedbackDev == NULL)
-    {
-        return;
-    }
-    
-    for ( int i = 0; i < m_NumMotors; i++ )
-    {
-        m_pMotors[i]->SetPulseWidthPosition(0);
-    }
-}
-
-void TalonMotorGroup::StartEncoderMove(int targetValue)//, Direction direction)
-{
-    /*
-    Timer * pTimer = new Timer();
-    pTimer->Reset();
-    pTimer->Start();
-    int currentPosition = m_pMotors[0]->GetPulseWidthPosition();
-    
-    // Down is positive
-    if (currentPosition < targetValue)
-    {
-        Set(.5F);
-        while (m_pMotors[0]->GetPulseWidthPosition() < targetValue && pTimer->Get() < 3.0F) {}
-    }
-    else if (currentPosition > targetValue)
-    {
-        Set(-.5F);
-        while (m_pMotors[0]->GetPulseWidthPosition() > targetValue && pTimer->Get() < 3.0F) {}
-    }
-    else
-    {
-    }
-    
-    Set(0.0F);
-    pTimer->Stop();
-    delete pTimer;
-    */
-    /*
-    // Make sure an action isn't ongoing
-    if (m_bActionInProgress)
-    {
-        return;
-    }
-    
-    // Save off destination position
-    m_EncoderTargetValue = targetValue;
-    m_EncoderDirection = direction;
-    
-    if (direction == FORWARD)
-    {
-        Set(ENCODER_AUTO_MOVE_SPEED);
-    }
-    else
-    {
-        Set(-ENCODER_AUTO_MOVE_SPEED);
-    }
-    
-    m_bActionInProgress = true;
-    */
-}
-
-void TalonMotorGroup::EncoderSequence(bool bCancelMove)
-{
-    /*
-    // A device needs to be registered
-    if (m_pFeedbackDev == NULL)
-    {
-        return;
-    }
-    
-    switch (*m_pFeedbackDev)
-    {
-        case FeedbackDevice::CtreMagEncoder_Absolute:
-        {
-            if (m_bActionInProgress)
-            {            
-                int sensorVals[m_NumMotors] = {0};
-                for ( int i = 0; i < m_NumMotors; i++ )
-                {
-                    sensorVals[i] = m_pMotors[i]->GetPulseWidthPosition();
-                    
-                    // 2016 - First encoder is backward
-                    if (i == 0)
-                    {
-                        sensorVals[i] *= -1;
-                    }
-                }
-                
-                if (  m_EncoderDirection == FORWARD
-                   && (sensorVals[0] >= m_EncoderTargetValue || sensorVals[1] >= m_EncoderTargetValue))
-                {
-                    Set(0.0F);
-                    m_bActionInProgress = false;
-                }
-                else if (  m_EncoderDirection == REVERSE
-                        && (sensorVals[0] <= m_EncoderTargetValue || sensorVals[1] <= m_EncoderTargetValue))
-                {
-                    Set(0.0F);
-                    m_bActionInProgress = false;
-                }
-                else
-                {
-                }
-                
-                int encoderDifference = sensorVals[0] - sensorVals[1];
-                if (encoderDifference <= 0)
-                {
-                    encoderDifference *= -1;
-                }
-                
-                if (encoderDifference >= ENCODER_SLOP_VALUE || bCancelMove)
-                {
-                    Set(0.0F);
-                    m_bActionInProgress = false;
-                }
-            }
-            break;
-        }
-        default:
-            break;
-    };
-    */
-}
-
 
 
 
 ////////////////////////////////////////////////////////////////
-// @method TalonMotorGroup::SetSpeed
+/// @method TalonMotorGroup::SetCoastMode
+///
+/// Method to change a talon to coast mode.
+///
+////////////////////////////////////////////////////////////////
+void TalonMotorGroup::SetCoastMode()
+{
+    for (int i = 0; i < m_NumMotors; i++)
+    {
+        m_pMotors[i]->SetNeutralMode(NeutralMode::Coast);
+    }
+}
+
+
+
+////////////////////////////////////////////////////////////////
+/// @method TalonMotorGroup::SetBrakeMode
+///
+/// Method to change a talon to brake mode.
+///
+////////////////////////////////////////////////////////////////
+void TalonMotorGroup::SetBrakeMode()
+{
+    for (int i = 0; i < m_NumMotors; i++)
+    {
+        m_pMotors[i]->SetNeutralMode(NeutralMode::Brake);
+    }
+}
+
+
+
+////////////////////////////////////////////////////////////////
+/// @method TalonMotorGroup::TareEncoder
+///
+/// Method to tare the value on an encoder feedback device
+/// connected to a Talon controller.
+///
+////////////////////////////////////////////////////////////////
+void TalonMotorGroup::TareEncoder()
+{
+    if (m_Sensor == FeedbackDevice::CTRE_MagEncoder_Relative)
+    {
+        // sensorPos, pidIdx, timeoutMs
+        m_pMotors[0]->SetSelectedSensorPosition(0, 0, 0);
+    }
+}
+
+
+
+////////////////////////////////////////////////////////////////
+/// @method TalonMotorGroup::GetEncoderValue
+///
+/// Method to get the value from an encoder feedback device
+/// connected to a Talon controller.
+///
+////////////////////////////////////////////////////////////////
+int TalonMotorGroup::GetEncoderValue()
+{
+    if (m_Sensor == FeedbackDevice::CTRE_MagEncoder_Relative)
+    {
+        // pidIdx
+        return m_pMotors[0]->GetSelectedSensorPosition(0);
+    }
+    else
+    {
+        return 0;
+    }
+}
+
+
+
+////////////////////////////////////////////////////////////////
+/// @method TalonMotorGroup::Set
 ///
 /// Method to set the speed of each motor in the group.
 ///
 ////////////////////////////////////////////////////////////////
-void TalonMotorGroup::Set( float value )
+void TalonMotorGroup::Set( double value )
 {
     // Check what kind of group this is.  Most
     // CAN Talons will be set to follow, but some
-    // may be independent (such as if they need
-    // to drive in different directions).
+    // may be independent or inverse (such as if
+    // they need to drive in different directions).
     switch (m_ControlMode)
     {
         // Typical case, just update the master
         case FOLLOW:
         {
-            m_pMotors[0]->Set(value);
+            m_pMotors[0]->Set(ControlMode::PercentOutput, value);
+            break;
+        }
+        case INDEPENDENT:
+        {
+            for (int i = 0; i < m_NumMotors; i++)
+            {
+                m_pMotors[i]->Set(ControlMode::PercentOutput, value);
+            }
             break;
         }
         // Motors are attached to drive in
@@ -263,22 +193,77 @@ void TalonMotorGroup::Set( float value )
             // (i.e. 1:n motors, 1:n/2 forward, n/2:n reverse
             for (int i = 0; i < m_NumMotors / 2; i++)
             {
-               m_pMotors[i]->Set(value);
+               m_pMotors[i]->Set(ControlMode::PercentOutput, value);
             }
             for (int i = m_NumMotors / 2; i < m_NumMotors; i++)
             {
-                   m_pMotors[i]->Set(-value);
+                   m_pMotors[i]->Set(ControlMode::PercentOutput, -value);
             }
             break;
         }
-        case INDEPENDENT:
+        // Default cases for the offsets
+        case INDEPENDENT_OFFSET:
+        case INVERSE_OFFSET:
         {
-            for (int i = 0; i < m_NumMotors; i++)
-            {
-                m_pMotors[i]->Set(value);
-            }
+            SetWithOffset(value, value);
+            break;
         }
         default:
+        {
             break;
+        }
+    };
+}
+
+
+
+////////////////////////////////////////////////////////////////
+/// @method TalonMotorGroup::SetWithOffset
+///
+/// Method to set the speed of each motor in the group, where
+/// the speed is different between motors in the group.
+///
+////////////////////////////////////////////////////////////////
+void TalonMotorGroup::SetWithOffset( double group1Value, double group2Value )
+{
+    // Check what kind of group this is.  This Talon
+    // group is not uniform, so different values need
+    // to be applied.
+    switch (m_ControlMode)
+    {
+        case INDEPENDENT_OFFSET:
+        {
+            // Assumes each half of motors need to go the same direction
+            // (i.e. 1:n motors, 1:n/2 forward, n/2:n reverse
+            for (int i = 0; i < m_NumMotors / 2; i++)
+            {
+                m_pMotors[i]->Set(ControlMode::PercentOutput, group1Value);
+            }
+            for (int i = m_NumMotors / 2; i < m_NumMotors; i++)
+            {
+                m_pMotors[i]->Set(ControlMode::PercentOutput, group2Value);
+            }
+            break;
+        }
+        // Motors are attached to drive in
+        // opposite directions
+        case INVERSE_OFFSET:
+        {
+            // Assumes each half of motors need to go the same direction
+            // (i.e. 1:n motors, 1:n/2 forward, n/2:n reverse
+            for (int i = 0; i < m_NumMotors / 2; i++)
+            {
+                m_pMotors[i]->Set(ControlMode::PercentOutput, group1Value);
+            }
+            for (int i = m_NumMotors / 2; i < m_NumMotors; i++)
+            {
+                m_pMotors[i]->Set(ControlMode::PercentOutput, -group2Value);
+            }
+            break;
+        }
+        default:
+        {
+            break;
+        }
     };
 }

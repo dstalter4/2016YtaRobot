@@ -37,11 +37,11 @@ CmsdRobot::CmsdRobot()
 : m_pDriverStation              (&DriverStation::GetInstance())
 , m_pDriveJoystick              (new Joystick(DRIVE_JOYSTICK))
 , m_pControlJoystick            (new Joystick(CONTROL_JOYSTICK))
-, m_pLeftDriveMotor             (new TalonMotorGroup(NUMBER_OF_LEFT_DRIVE_MOTORS, LEFT_MOTORS_CAN_START_ID, NeutralMode::kNeutralMode_Coast, ControlMode::FOLLOW))
-, m_pRightDriveMotor            (new TalonMotorGroup(NUMBER_OF_RIGHT_DRIVE_MOTORS, RIGHT_MOTORS_CAN_START_ID, NeutralMode::kNeutralMode_Coast, ControlMode::FOLLOW))
-, m_pBallLiftMotor              (new TalonMotorGroup(NUMBER_OF_BALL_LIFT_MOTORS, BALL_LIFT_CAN_START_ID, NeutralMode::kNeutralMode_Brake, ControlMode::INVERSE))
-, m_pRobotClimbMotor            (new TalonMotorGroup(NUMBER_OF_ROBOT_CLIMB_MOTORS, ROBOT_CLIMB_CAN_START_ID, NeutralMode::kNeutralMode_Brake, ControlMode::INVERSE))
-, m_pBallIntakeMotor            (new CANTalon(BALL_INTAKE_CAN_ID))
+, m_pLeftDriveMotor             (new TalonMotorGroup(NUMBER_OF_LEFT_DRIVE_MOTORS, LEFT_MOTORS_CAN_START_ID, /*NeutralMode::kNeutralMode_Coast,*/ MotorGroupControlMode::FOLLOW))
+, m_pRightDriveMotor            (new TalonMotorGroup(NUMBER_OF_RIGHT_DRIVE_MOTORS, RIGHT_MOTORS_CAN_START_ID, /*NeutralMode::kNeutralMode_Coast,*/ MotorGroupControlMode::FOLLOW))
+, m_pBallLiftMotor              (new TalonMotorGroup(NUMBER_OF_BALL_LIFT_MOTORS, BALL_LIFT_CAN_START_ID, /*NeutralMode::kNeutralMode_Brake,*/ MotorGroupControlMode::INVERSE))
+, m_pRobotClimbMotor            (new TalonMotorGroup(NUMBER_OF_ROBOT_CLIMB_MOTORS, ROBOT_CLIMB_CAN_START_ID, /*NeutralMode::kNeutralMode_Brake,*/ MotorGroupControlMode::INVERSE))
+, m_pBallIntakeMotor            (new TalonSRX(BALL_INTAKE_CAN_ID))
 , m_pLedRelay                   (new Relay(LED_RELAY_ID))
 , m_pAutonomousRoutine1Switch   (new DigitalInput(AUTONOMOUS_ROUTINE_1_SWITCH))
 , m_pAutonomousRoutine2Switch   (new DigitalInput(AUTONOMOUS_ROUTINE_2_SWITCH))
@@ -57,7 +57,7 @@ CmsdRobot::CmsdRobot()
 , m_pCameraRunTimer             (new Timer())
 , m_pSolenoidRetractTimer       (new Timer())
 , m_pAccelerometer              (new BuiltInAccelerometer())
-, m_pCameras                    (new RobotCamera(CameraType::USB))
+//, m_pCameras                    (new RobotCamera(CameraType::USB))
 , m_serialPortBuffer            ()
 , m_pSerialPort                 (new SerialPort(SERIAL_PORT_BAUD_RATE, SerialPort::kMXP, SERIAL_PORT_NUM_DATA_BITS, SerialPort::kParity_None, SerialPort::kStopBits_One))
 , m_bDriveSwap                  (true)  // 2016 Change Only!
@@ -76,7 +76,12 @@ CmsdRobot::CmsdRobot()
     m_pSerialPort->Reset();
     
     // Reset the position on the ball lift encoders
-    m_pBallLiftMotor->CreateEncoderFeedbackDevice(FeedbackDevice::CtreMagEncoder_Absolute);
+    //m_pBallLiftMotor->CreateEncoderFeedbackDevice(FeedbackDevice::CtreMagEncoder_Absolute);
+    m_pLeftDriveMotor->SetCoastMode();
+    m_pRightDriveMotor->SetCoastMode();
+    m_pBallLiftMotor->SetBrakeMode();
+    m_pBallIntakeMotor->SetNeutralMode(NeutralMode::Coast);
+    m_pRobotClimbMotor->SetBrakeMode();
 }
 
 
@@ -95,7 +100,7 @@ void CmsdRobot::InitialStateSetup()
     m_pLeftDriveMotor->Set(OFF);
     m_pRightDriveMotor->Set(OFF);
     m_pBallLiftMotor->Set(OFF);
-    m_pBallIntakeMotor->Set(OFF);
+    m_pBallIntakeMotor->Set(ControlMode::PercentOutput, OFF);
     m_pRobotClimbMotor->Set(OFF);
 
     // Put solenoids in a known state
@@ -138,12 +143,12 @@ void CmsdRobot::Autonomous()
         if (m_pAutonomousRoutine1Switch->Get())
         {
             // Climbing arm moves up
-        	m_pClimbPoleRaiseSolenoid->Set(SolenoidState::kForward);
+            m_pClimbPoleRaiseSolenoid->Set(SolenoidState::kForward);
             
-        	AutonomousDelay(AUTO_DRIVE_TO_SHOOT_DELAY);
+            AutonomousDelay(AUTO_DRIVE_TO_SHOOT_DELAY);
             
             // Lower the ball intake so we clear the bar
-        	// The sign has been changed to (-)!!in Cincy
+            // The sign has been changed to (-)!!in Cincy
             m_pBallLiftMotor->Set(-AUTO_BALL_LIFT_SPEED);
             
             AutonomousDelay(AUTO_CLIMB_ARM_LOWER_DELAY);
@@ -297,15 +302,15 @@ void CmsdRobot::BallIntakeSequence()
     // First check for ball intake
     if (m_pControlJoystick->GetRawButton(BALL_INTAKE_FORWARD_BUTTON))
     {
-        m_pBallIntakeMotor->Set(ON * throttleControl);
+        m_pBallIntakeMotor->Set(ControlMode::PercentOutput, ON * throttleControl);
     }
     else if (m_pControlJoystick->GetRawButton(BALL_INTAKE_REVERSE_BUTTON))
     {
-        m_pBallIntakeMotor->Set(-ON * throttleControl);
+        m_pBallIntakeMotor->Set(ControlMode::PercentOutput, -ON * throttleControl);
     }
     else
     {
-        m_pBallIntakeMotor->Set(OFF);
+        m_pBallIntakeMotor->Set(ControlMode::PercentOutput, OFF);
     }
     
     // Now check the ball lift mechanism
@@ -543,7 +548,7 @@ void CmsdRobot::SerialPortSequence()
 void CmsdRobot::CameraSequence()
 {    
     // Now do the camera processing
-    bool bDoFullVisionProcessing = false;
+    //bool bDoFullVisionProcessing = false;
     
     // To not kill the CPU/hog this thread, only do full
     // vision processing (particle analysis) periodically.
@@ -553,7 +558,7 @@ void CmsdRobot::CameraSequence()
         m_pCameraRunTimer->Reset();
     }
     
-    m_bTargetInRange = m_pCameras->ProcessTarget(bDoFullVisionProcessing);
+    //m_bTargetInRange = m_pCameras->ProcessTarget(bDoFullVisionProcessing);
 }
 
 

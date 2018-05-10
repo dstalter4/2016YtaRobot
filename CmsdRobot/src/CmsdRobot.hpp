@@ -25,7 +25,7 @@
 
 // C++ INCLUDES
 #include "TalonMotorGroup.hpp"      // For Talon group motor control
-#include "RobotCamera.hpp"          // For interaction with the cameras
+//#include "RobotCamera.hpp"          // For interaction with the cameras
 
 ////////////////////////////////////////////////////////////////
 // @class CmsdRobot
@@ -63,11 +63,11 @@ private:
     typedef Relay::Value RelayValue;
     typedef Relay::Direction RelayDirection;
     typedef DoubleSolenoid::Value SolenoidState;
-    typedef CANTalon::NeutralMode NeutralMode;
-    typedef CANTalon::FeedbackDevice FeedbackDevice;
-    typedef CANTalon::FeedbackDeviceStatus FeedbackDeviceStatus;
-    typedef TalonMotorGroup::ControlMode ControlMode;
-    typedef RobotCamera::Camera CameraType;
+    //typedef CANTalon::NeutralMode NeutralMode;
+    //typedef CANTalon::FeedbackDevice FeedbackDevice;
+    //typedef CANTalon::FeedbackDeviceStatus FeedbackDeviceStatus;
+    typedef TalonMotorGroup::MotorGroupControlMode MotorGroupControlMode;
+    //typedef RobotCamera::Camera CameraType;
     
     // ENUMS
     // (none)
@@ -148,7 +148,7 @@ private:
     TalonMotorGroup     *m_pRightDriveMotor;            // Right drive motor control
     TalonMotorGroup     *m_pBallLiftMotor;              // Motor to move the ball into the shooter
     TalonMotorGroup     *m_pRobotClimbMotor;            // Motor to scale the tower with
-    CANTalon            *m_pBallIntakeMotor;            // Ball pickup motor
+    TalonSRX            *m_pBallIntakeMotor;            // Ball pickup motor
     
     // Spike Relays
     Relay               *m_pLedRelay;                   // Controls whether or not the LEDs are lit up
@@ -184,7 +184,7 @@ private:
     BuiltInAccelerometer*m_pAccelerometer;              // Built in roborio accelerometer
 
     // Camera
-    RobotCamera         *m_pCameras;                    // Camera object
+    //RobotCamera         *m_pCameras;                    // Camera object
 
     // Serial port configuration
     static const int     SERIAL_PORT_BUFFER_SIZE_BYTES          = 1024;

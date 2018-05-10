@@ -1,15 +1,21 @@
 ////////////////////////////////////////////////////////////////////////////////
-/// @file TalonMotorGroup.hpp
+/// @file   TalonMotorGroup.hpp
+/// @author David Stalter
 ///
-/// A class designed to create a group of CAN Talons working in tandem.
+/// @details
+/// A class designed to work with a group of CAN Talon speed controllers working
+/// in tandem.
 ///
-/// CMSD FRC 2016
-/// Author: David Stalter
-/// @Edit History
+/// @if INCLUDE_EDIT_HISTORY
 /// - dts   03-JAN-2015 Created from 2014.
 /// - dts   17-JAN-2015 Ported to CAN Talons.
 /// - dts   06-FEB-2015 Support for follow and inverse control.
+/// - dts   08-JAN-2017 Ported to use TalonSRX class.
+/// - dts   06-JAN-2018 Adopted to CTRE Phoenix.
+/// - dts   05-FEB-2018 Convert float -> double.
+/// @endif
 ///
+/// Copyright (c) 2018 Youth Technology Academy
 ////////////////////////////////////////////////////////////////////////////////
 
 #ifndef TALONMOTORGROUP_HPP
@@ -19,70 +25,61 @@
 // <none>
 
 // C INCLUDES
-#include "WPILib.h"     // For FRC library declarations
+#include "ctre/Phoenix.h"               // For CTRE libraries
 
 // C++ INCLUDES
 // (none)
 
+
+////////////////////////////////////////////////////////////////
+/// @class TalonMotorGroup
+///
+/// Class that provides methods for interacting with a group of
+/// Talon speed controllers.
+///
+////////////////////////////////////////////////////////////////
 class TalonMotorGroup
 {
 public:
-
-    typedef CANTalon::NeutralMode NeutralMode;
-    typedef CANTalon::FeedbackDevice FeedbackDevice;
-    typedef CANTalon::FeedbackDeviceStatus FeedbackDeviceStatus;
-
-    enum ControlMode
-    {
-        INVERSE,
-        FOLLOW,
-        INDEPENDENT
-    };
     
-    enum Direction
+    enum MotorGroupControlMode
     {
-        FORWARD,
-        REVERSE
+        FOLLOW,
+        INDEPENDENT,
+        INVERSE,
+        INDEPENDENT_OFFSET,
+        INVERSE_OFFSET
     };
 
     // Constructor
-    TalonMotorGroup( int numInstances, int firstCANId, NeutralMode neutralMode, ControlMode controlMode );
+    TalonMotorGroup( int numMotors, int firstCANId, MotorGroupControlMode controlMode, FeedbackDevice sensor = FeedbackDevice::None );
     
     // Function to set the speed of each motor in the group
-    void Set( float value );
+    void Set( double value );
+    void SetWithOffset( double group1Value, double group2Value );
     
-    // Register a sensor type for this motor group
-    void CreateEncoderFeedbackDevice(FeedbackDevice feedbackDev);
-    
-    // Zero out an encoder
+    // Return the value of the sensor connected to the Talon
+    int GetEncoderValue();
     void TareEncoder();
     
-    // Start an encoder controlled movement
-    void StartEncoderMove(int targetValue);//, Direction direction);
-    
-    // Main flow for processing info from an encoder
-    void EncoderSequence(bool bCancelMove);
+    // Change Talon mode between brake/coast
+    void SetCoastMode();
+    void SetBrakeMode();
     
 private:
-    static const int        MAX_NUMBER_OF_MOTORS    = 10;
-    static const int        ENCODER_SLOP_VALUE      = 100;
-    static constexpr float  ENCODER_AUTO_MOVE_SPEED = .25F;
+    static const int MAX_NUMBER_OF_MOTORS = 4;
 
     // Member variables
-    CANTalon *  m_pMotors[MAX_NUMBER_OF_MOTORS];        // The motor objects
-    ControlMode m_ControlMode;                          // Keep track of the configuration of this Talon group
-    FeedbackDevice * m_pFeedbackDev;                    // Any sensor potentially connected to a Talon
     int m_NumMotors;                                    // Number of motors in the group
-    int m_EncoderCreationValues[MAX_NUMBER_OF_MOTORS];  // The original value of an encoder
-    int m_EncoderTargetValue;                           // Where we want to move an encoder to
-    Direction m_EncoderDirection;                       // Which way the encoder is moving
-    bool m_bActionInProgress;                           // Keep track of any sensor operations
+    TalonSRX *  m_pMotors[MAX_NUMBER_OF_MOTORS];        // The motor objects
+    MotorGroupControlMode m_ControlMode;                // Keep track of the configuration of this Talon group
+    FeedbackDevice m_Sensor;                            // Keep track of the sensor attached to the Talon
     
     // Prevent default construction/deletion/copy/assignment
     TalonMotorGroup();
     ~TalonMotorGroup();
-    TalonMotorGroup( const TalonMotorGroup& );
-    TalonMotorGroup & operator=( const TalonMotorGroup& );
+    TalonMotorGroup( const TalonMotorGroup& ) = delete;
+    TalonMotorGroup & operator=( const TalonMotorGroup& ) = delete;
 };
 
 #endif // TALONMOTORGROUP_HPP
